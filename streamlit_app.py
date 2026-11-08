@@ -2,6 +2,10 @@
 import streamlit as st
 import requests
 import os
+
+import json
+import pandas as pd
+from pathlib import Path
 # ==========================================
 # 1. PAGE CONFIGURATION
 # ==========================================
@@ -571,8 +575,126 @@ if submitted:
         st.error(f"Unexpected API response: {error}")
 
 
+
 # ==========================================
-# 8. FOOTER
+# 8. PREDICTION MONITORING DASHBOARD
+# ==========================================
+
+st.divider()
+
+st.markdown(
+    '<div class="section-heading">📈 Prediction Monitoring Dashboard</div>',
+    unsafe_allow_html=True
+)
+
+LOG_FILE = Path(__file__).resolve().parent / "logs" / "predictions.log"
+
+
+def load_prediction_logs():
+
+    records = []
+
+    if not LOG_FILE.exists():
+        return pd.DataFrame()
+
+    with open(LOG_FILE, "r", encoding="utf-8") as file:
+
+        for line in file:
+
+            try:
+                json_part = line.split(" - ", 1)[1]
+                record = json.loads(json_part)
+                records.append(record)
+
+            except (IndexError, json.JSONDecodeError):
+                continue
+
+    return pd.DataFrame(records)
+
+
+df = load_prediction_logs()
+
+if df.empty:
+
+    st.info("No prediction records available yet.")
+
+else:
+
+    df["timestamp"] = pd.to_datetime(
+        df["timestamp"], utc=True
+    )
+
+    # Prediction counts
+    total = len(df)
+
+    fatal_count = (df["predicted_severity"] == "Fatal").sum()
+    serious_count = (df["predicted_severity"] == "Serious").sum()
+    slight_count = (df["predicted_severity"] == "Slight").sum()
+
+    # Metrics
+    st.markdown("#### Prediction Summary")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Total Predictions", total)
+    col2.metric("Fatal", int(fatal_count))
+    col3.metric("Serious", int(serious_count))
+    col4.metric("Slight", int(slight_count))
+
+    st.divider()
+
+    # Severity distribution
+    st.markdown("#### Severity Distribution")
+
+    severity_counts = (
+        df["predicted_severity"]
+        .value_counts()
+        .reindex(["Fatal", "Serious", "Slight"], fill_value=0)
+    )
+
+    st.bar_chart(severity_counts)
+
+    # Daily prediction trend
+    st.markdown("#### Daily Prediction Trend")
+
+    df["date"] = df["timestamp"].dt.date
+
+    daily_counts = (
+        df.groupby("date")
+        .size()
+        .rename("Number of Predictions")
+    )
+
+    st.line_chart(daily_counts)
+
+    st.divider()
+
+    # Prediction history
+    st.markdown("#### Prediction History")
+
+    history = df[
+        ["timestamp", "predicted_severity_code", "predicted_severity"]
+    ].copy()
+
+    history["timestamp"] = history["timestamp"].dt.strftime(
+        "%Y-%m-%d %H:%M:%S UTC"
+    )
+
+    history = history.rename(columns={
+        "timestamp": "Timestamp",
+        "predicted_severity_code": "Severity Code",
+        "predicted_severity": "Predicted Severity"
+    })
+
+    st.dataframe(
+        history.sort_values("Timestamp", ascending=False),
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# ==========================================
+# 9. FOOTER
 # ==========================================
 
 st.divider()
@@ -586,3 +708,4 @@ st.markdown("""
     Predictions represent learned associations, not causal factors.
 </div>
 """, unsafe_allow_html=True)
+
