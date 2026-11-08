@@ -1,0 +1,41 @@
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# MLflow
+mlruns/
+mlflow.db
+
+# Logs and temporary files
+logs/
+*.log
+.pytest_cache/
+
+# Data and notebooks
+data/
+notebooks/
+.ipynb_checkpoints/
+
+# Generated figures
+*.png
+*.jpg
+*.jpeg
+
+# Environment secrets
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+
+# Experimental models and evaluation outputs
+models/*.csv
+models/*.png
+models/*.joblib
+!models/best_model.joblib
+
+models/evaluation/
+models/mlflow_reports/
