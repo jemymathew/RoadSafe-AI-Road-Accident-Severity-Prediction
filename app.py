@@ -1,14 +1,66 @@
 
 import joblib
 import pandas as pd
+import logging
+import json
 
 from pathlib import Path
+from logging.handlers import RotatingFileHandler
+from datetime import datetime, timezone
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 
 # ==========================================
-# 1. INITIALIZE FASTAPI
+# 1. LOGGING CONFIGURATION
+# ==========================================
+
+BASE_DIR = Path(__file__).resolve().parent
+LOG_DIR = BASE_DIR / "logs"
+
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# Prediction logger
+prediction_logger = logging.getLogger("roadsafe.predictions")
+prediction_logger.setLevel(logging.INFO)
+
+prediction_handler = RotatingFileHandler(
+    LOG_DIR / "predictions.log",
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3
+)
+
+prediction_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(message)s")
+)
+
+prediction_logger.addHandler(prediction_handler)
+prediction_logger.propagate = False
+
+
+# Error logger
+error_logger = logging.getLogger("roadsafe.errors")
+error_logger.setLevel(logging.ERROR)
+
+error_handler = RotatingFileHandler(
+    LOG_DIR / "errors.log",
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3
+)
+
+error_handler.setFormatter(
+    logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s"
+    )
+)
+
+error_logger.addHandler(error_handler)
+error_logger.propagate = False
+
+
+# ==========================================
+# 2. INITIALIZE FASTAPI
 # ==========================================
 
 app = FastAPI(
@@ -19,20 +71,16 @@ app = FastAPI(
 
 
 # ==========================================
-# 2. LOAD TRAINED MODEL
+# 3. LOAD TRAINED MODEL
 # ==========================================
 
-MODEL_PATH = (
-    Path(__file__).resolve().parent
-    / "models"
-    / "best_model.joblib"
-)
+MODEL_PATH = BASE_DIR / "models" / "best_model.joblib"
 
 model = joblib.load(MODEL_PATH)
 
 
 # ==========================================
-# 3. DEFINE INPUT DATA
+# 4. DEFINE INPUT DATA
 # ==========================================
 
 class AccidentInput(BaseModel):
@@ -71,7 +119,7 @@ class AccidentInput(BaseModel):
 
 
 # ==========================================
-# 4. SEVERITY LABELS
+# 5. SEVERITY LABELS
 # ==========================================
 
 severity_labels = {
@@ -82,7 +130,7 @@ severity_labels = {
 
 
 # ==========================================
-# 5. HOME ENDPOINT
+# 6. HOME ENDPOINT
 # ==========================================
 
 @app.get("/")
@@ -96,7 +144,7 @@ def home():
 
 
 # ==========================================
-# 6. PREDICTION ENDPOINT
+# 7. PREDICTION ENDPOINT
 # ==========================================
 
 @app.post("/predict")
@@ -121,6 +169,7 @@ def predict_accident(data: AccidentInput):
             "Light_Conditions": data.Light_Conditions,
             "Weather_Conditions": data.Weather_Conditions,
             "Road_Surface_Conditions": data.Road_Surface_Conditions,
+
             "Special_Conditions_at_Site":
                 data.Special_Conditions_at_Site,
 
@@ -136,14 +185,29 @@ def predict_accident(data: AccidentInput):
 
         prediction = int(model.predict(input_data)[0])
 
-        return {
+        severity = severity_labels[prediction]
+
+        # Log successful prediction
+        prediction_record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "input": input_data.to_dict(orient="records")[0],
             "predicted_severity_code": prediction,
-            "predicted_severity": severity_labels[prediction]
+            "predicted_severity": severity
         }
 
-    except Exception as e:
+        prediction_logger.info(json.dumps(prediction_record))
+
+        return {
+            "predicted_severity_code": prediction,
+            "predicted_severity": severity
+        }
+
+    except Exception:
+
+        # Record technical error and traceback
+        error_logger.exception("Prediction failed")
 
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Prediction failed due to an internal server error."
         )

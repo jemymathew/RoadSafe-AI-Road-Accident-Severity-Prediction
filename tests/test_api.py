@@ -1,4 +1,4 @@
-
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from app import app
 
@@ -74,3 +74,31 @@ def test_invalid_day_of_week():
     response = client.post("/predict", json=payload)
 
     assert response.status_code == 422
+
+def test_prediction_error_logging():
+
+    with patch("app.model.predict", side_effect=RuntimeError("Test model failure")):
+        response = client.post("/predict", json={
+            "Police_Force": 1,
+            "1st_Road_Class": 3,
+            "2nd_Road_Class": 6,
+            "Road_Type": 6,
+            "Junction_Detail": 0,
+            "Junction_Control": -1,
+            "Pedestrian_Crossing-Human_Control": 0,
+            "Pedestrian_Crossing-Physical_Facilities": 0,
+            "Light_Conditions": 1,
+            "Weather_Conditions": 1,
+            "Road_Surface_Conditions": 1,
+            "Special_Conditions_at_Site": 0,
+            "Carriageway_Hazards": 0,
+            "Urban_or_Rural_Area": 1,
+            "Day_of_Week": 2,
+            "Speed_limit": 30,
+            "Month": 6,
+            "Day": 15,
+            "Hour": 14
+        })
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Prediction failed due to an internal server error."
